@@ -1,3 +1,10 @@
+{
+  "name": "SmartEV Prototype",
+  "short_name": "SmartEV",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#007AFF",
 "icons": [
   {
     "src": "/smartevlogo.png",
@@ -10,3 +17,4 @@
     "type": "image/png"
   }
 ]
+
