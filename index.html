@@ -1,0 +1,1587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SmartEV Charging Enhanced</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&family=SF+Pro+Display:wght@400;600&display=swap" rel="stylesheet">
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#0088FF',
+                        secondary: '#0055FF',
+                        success: '#00D10E',
+                        danger: '#FF383C',
+                        surface: '#F8FAFC',
+                    },
+                    fontFamily: {
+                        sans: ['Open Sans', 'sans-serif'],
+                        sf: ['SF Pro Display', 'sans-serif']
+                    },
+                    boxShadow: {
+                        'soft': '0 10px 40px -10px rgba(0,0,0,0.08)',
+                        'glow': '0 0 20px rgba(0, 136, 255, 0.3)'
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Hide Scrollbar */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        
+        /* Glassmorphism */
+        .glass {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        /* Screen Transitions */
+        .screen {
+            display: none;
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            background: #F8FAFC;
+        }
+        
+        .screen.active {
+            display: flex;
+            flex-direction: column;
+            opacity: 1;
+            z-index: 10;
+        }
+
+        /* Slide Effects */
+        .slide-enter {
+            transform: translateX(20px);
+        }
+        .slide-enter-active {
+            transform: translateX(0);
+        }
+
+        /* Map Styling - Leaflet Container */
+        #map-container {
+            background-color: #eef2f6;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+        }
+
+        /* Custom Leaflet Marker Styling */
+        .leaflet-div-icon {
+            background: transparent;
+            border: none;
+        }
+
+        /* Pulse Animation for Map Marker */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(2.5); opacity: 0; }
+        }
+        
+        /* Marker Wrapper to center the pulse */
+        .custom-marker-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+        }
+
+        .marker-pulse::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            background-color: inherit;
+            border-radius: 50%;
+            z-index: -1;
+            animation: pulse-ring 2s infinite;
+        }
+
+        /* Slot Selection Animation */
+        .slot-card {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .slot-card:active {
+            transform: scale(0.96);
+        }
+
+        /* Bottom Nav fixed height adjustment */
+        .pb-nav {
+            padding-bottom: 100px;
+        }
+        
+        /* Clean up Leaflet attribution for mobile view */
+        .leaflet-control-attribution {
+            font-size: 8px !important;
+            background: rgba(255,255,255,0.7) !important;
+        }
+    </style>
+</head>
+<body class="bg-gray-200 h-screen w-full flex justify-center items-center font-sans overflow-hidden select-none">
+
+    <!-- Global script for onclick handlers -->
+    <script>
+        window._navigateTo = (screenId) => window.navigateTo?.(screenId);
+        window._selectSlot = (el, slotId) => window.selectSlot?.(el, slotId);
+        window._openDetails = () => window.openDetails?.();
+        window._openBookingModal = () => window.openBookingModal?.();
+        window._closeBookingModal = () => window.closeBookingModal?.();
+        window._confirmBooking = () => window.confirmBooking?.();
+        window._promptCancel = (index) => window.promptCancel?.(index);
+        window._closeConfirmModal = () => window.closeConfirmModal?.();
+        window._performCancel = () => window.performCancel?.();
+        window._filterStations = (query) => window.filterStations?.(query);
+        window._resetMap = () => window.resetMap?.();
+        window._openStationPreview = (station) => window.openStationPreview?.(station);
+        window._closeStationPreview = () => window.closeStationPreview?.();
+    </script>
+
+    <!-- Mobile App Container -->
+    <div class="w-full h-full max-w-[430px] bg-surface relative shadow-2xl overflow-hidden sm:rounded-[2.5rem] sm:h-[90vh] sm:border-[8px] sm:border-gray-900 ring-1 ring-black/5">
+        
+        <!-- =========================
+             SCREEN: WELCOME
+        ========================== -->
+        <div id="screen-welcome" class="screen active z-50 bg-white">
+            <div class="flex-1 flex flex-col items-center justify-center p-8 text-center mt-10">
+                <div class="w-full aspect-square bg-blue-50 rounded-full mb-10 flex items-center justify-center relative overflow-hidden group">
+                    <div class="absolute inset-0 bg-blue-100 rounded-full scale-75 animate-pulse opacity-50"></div>
+                    <i class="fa-solid fa-bolt text-8xl text-primary relative z-10 drop-shadow-xl transform transition duration-500 group-hover:scale-110"></i>
+                </div>
+                
+                <h1 class="text-3xl font-sf font-bold text-gray-900 mb-3 tracking-tight">SmartEV</h1>
+                <p class="text-gray-500 text-base px-4 leading-relaxed">Instantly find charging stations, book slots, and navigate with ease.</p>
+            </div>
+            
+            <div class="p-8 pb-12 w-full">
+                <button onclick="window._navigateTo('home')" class="w-full bg-primary text-white py-4 rounded-2xl text-lg font-bold shadow-glow hover:bg-secondary active:scale-95 transition-all duration-200 mb-4">
+                    Get Started
+                </button>
+            </div>
+        </div>
+
+        <!-- =========================
+             SCREEN: HOME (MAP)
+        ========================== -->
+        <div id="screen-home" class="screen">
+            <!-- Search Bar -->
+            <div class="absolute top-12 left-5 right-5 z-20 flex gap-3 pointer-events-none">
+                <div class="glass flex-1 h-12 rounded-2xl shadow-soft flex items-center px-4 transition-all focus-within:ring-2 focus-within:ring-primary/50 pointer-events-auto">
+                    <i class="fa-solid fa-magnifying-glass text-gray-400 mr-3"></i>
+                    <input type="text" id="search-input" placeholder="Search station..." class="w-full bg-transparent outline-none text-gray-700 placeholder-gray-400 font-medium text-sm" onkeyup="filterStations(this.value)">
+                </div>
+                <button class="bg-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-soft text-gray-700 active:scale-90 transition pointer-events-auto">
+                    <i class="fa-solid fa-sliders"></i>
+                </button>
+            </div>
+
+            <!-- Map Area -->
+            <!-- Leaflet Map Container -->
+            <div class="absolute inset-0 z-0 w-full h-full" id="map-container"></div>
+
+            <!-- Recenter Button -->
+            <button class="absolute bottom-32 right-5 bg-white p-3 rounded-2xl shadow-lg border border-gray-100 active:bg-gray-50 transition z-10" onclick="resetMap()">
+                <i class="fa-solid fa-location-crosshairs text-gray-700 text-lg"></i>
+            </button>
+
+            <!-- Station Preview Card (Slide Up) -->
+            <div id="station-preview" class="absolute bottom-24 left-4 right-4 bg-white/95 backdrop-blur-md rounded-3xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] p-5 z-20 translate-y-[150%] transition-transform duration-500 cubic-bezier(0.34, 1.56, 0.64, 1)">
+                <!-- Content injected via JS -->
+                <div id="preview-content"></div>
+            </div>
+
+            <!-- Bottom Navigation -->
+            <div class="absolute bottom-0 w-full bg-white h-[88px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] rounded-t-[2.5rem] flex justify-around items-start pt-4 px-6 z-30">
+                <button onclick="navigateTo('home')" class="nav-btn active flex flex-col items-center gap-1 group w-16" data-target="home">
+                    <div class="icon-container w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 bg-primary/10 text-primary">
+                        <i class="fa-solid fa-map text-xl"></i>
+                    </div>
+                </button>
+                <button onclick="navigateTo('history')" class="nav-btn flex flex-col items-center gap-1 group w-16" data-target="history">
+                    <div class="icon-container w-12 h-12 rounded-2xl flex items-center justify-center text-gray-400 hover:bg-gray-50 transition-all duration-300">
+                        <i class="fa-solid fa-clock-rotate-left text-xl"></i>
+                    </div>
+                </button>
+                <button onclick="navigateTo('my-booking')" class="nav-btn flex flex-col items-center gap-1 group w-16" data-target="my-booking">
+                    <div class="icon-container w-12 h-12 rounded-2xl flex items-center justify-center text-gray-400 hover:bg-gray-50 transition-all duration-300">
+                        <i class="fa-solid fa-ticket text-xl"></i>
+                    </div>
+                </button>
+            </div>
+        </div>
+
+        <!-- =========================
+             SCREEN: DETAILS
+        ========================== -->
+        <div id="screen-details" class="screen bg-surface pb-24 overflow-y-auto no-scrollbar">
+            <!-- Dynamic Content Injected JS -->
+            <div id="details-content" class="w-full"></div>
+        </div>
+
+        <!-- =========================
+             MODAL: BOOKING
+        ========================== -->
+        <div id="modal-booking" class="hidden absolute inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center backdrop-blur-sm transition-opacity duration-300 opacity-0">
+            <div class="bg-white w-full max-w-sm mx-4 mb-6 sm:mb-0 rounded-[2rem] p-6 shadow-2xl transform translate-y-10 transition-transform duration-300" id="booking-card">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-2xl font-bold font-sf">Book Slot</h2>
+                        <p class="text-gray-400 text-xs mt-1" id="booking-station-name">Station Name</p>
+                    </div>
+                    <button onclick="closeBookingModal()" class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition"><i class="fa-solid fa-times text-gray-500"></i></button>
+                </div>
+
+                <div class="space-y-3 mb-8">
+                    <div class="bg-gray-50 p-4 rounded-2xl flex justify-between items-center border border-gray-100">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-primary"><i class="fa-regular fa-calendar"></i></div>
+                            <span class="text-sm font-semibold text-gray-700">Date</span>
+                        </div>
+                        <input type="date" id="book-date" class="bg-transparent text-right font-bold text-sm outline-none text-gray-900" required>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded-2xl flex justify-between items-center border border-gray-100">
+                        <div class="flex items-center gap-3">
+                             <div class="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-orange-500"><i class="fa-regular fa-clock"></i></div>
+                            <span class="text-sm font-semibold text-gray-700">Start</span>
+                        </div>
+                        <input type="time" id="book-time" class="bg-transparent text-right font-bold text-sm outline-none text-gray-900" required>
+                    </div>
+                </div>
+
+                <button onclick="confirmBooking()" class="w-full bg-primary text-white py-4 rounded-2xl font-bold text-lg shadow-lg hover:bg-secondary active:scale-95 transition-all">
+                    Confirm Booking
+                </button>
+            </div>
+        </div>
+
+        <!-- =========================
+             MODAL: CANCEL CONFIRMATION
+        ========================== -->
+        <div id="modal-confirm" class="hidden absolute inset-0 bg-black/60 z-[60] flex items-center justify-center backdrop-blur-sm transition-opacity duration-300 opacity-0">
+            <div class="bg-white w-full max-w-xs mx-6 rounded-[2rem] p-6 shadow-2xl transform scale-95 transition-transform duration-300" id="confirm-card">
+                <div class="text-center mb-6">
+                    <div class="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4 text-danger">
+                        <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-900">Cancel Booking?</h3>
+                    <p class="text-gray-500 text-sm mt-2">This action cannot be undone. You will lose your reserved slot.</p>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="closeConfirmModal()" class="flex-1 py-3 rounded-xl font-bold text-sm text-gray-500 bg-gray-100 hover:bg-gray-200 transition">No, Keep</button>
+                    <button onclick="performCancel()" class="flex-1 bg-danger text-white py-3 rounded-xl font-bold text-sm shadow-md hover:bg-red-600 transition">Yes, Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- =========================
+             SCREEN: SUCCESS
+        ========================== -->
+        <div id="screen-success" class="screen bg-white">
+             <div class="flex flex-col h-full items-center justify-center px-8 text-center">
+                <div class="w-28 h-28 rounded-full bg-green-50 flex items-center justify-center mb-6 relative animate-bounce">
+                     <div class="absolute inset-0 border-4 border-green-100 rounded-full animate-ping opacity-75"></div>
+                     <i class="fa-solid fa-check text-5xl text-success"></i>
+                </div>
+                
+                <h2 class="text-3xl font-bold text-gray-900 mb-2">Booking Confirmed!</h2>
+                <p class="text-gray-500 mb-10 leading-relaxed">Your slot has been successfully reserved. We've sent the details to your history.</p>
+                
+                <div class="w-full space-y-3">
+                    <button onclick="navigateTo('my-booking')" class="w-full bg-primary text-white py-4 rounded-2xl font-bold shadow-glow hover:bg-secondary transition">
+                        View Ticket
+                    </button>
+                    <button onclick="navigateTo('home')" class="w-full bg-white text-gray-500 py-4 rounded-2xl font-semibold hover:bg-gray-50 transition">
+                        Back to Map
+                    </button>
+                </div>
+             </div>
+        </div>
+
+        <!-- =========================
+             SCREEN: HISTORY
+        ========================== -->
+        <div id="screen-history" class="screen bg-surface">
+             <div class="pt-12 px-6 h-full flex flex-col pb-nav">
+                 <div class="flex items-center justify-between mb-8">
+                    <h1 class="text-3xl font-bold text-gray-900 font-sf">History</h1>
+                    <div class="w-10 h-10 rounded-full bg-gray-200 overflow-hidden">
+                        <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="User">
+                    </div>
+                 </div>
+
+                 <!-- Tabs -->
+                 <div class="flex gap-4 mb-6 overflow-x-auto no-scrollbar">
+                     <button class="px-6 py-2 bg-gray-900 text-white rounded-full text-sm font-semibold shadow-md whitespace-nowrap">Completed</button>
+                     <button class="px-6 py-2 bg-white text-gray-500 border border-gray-200 rounded-full text-sm font-semibold whitespace-nowrap">Cancelled</button>
+                 </div>
+
+                 <!-- List injected by JS -->
+                 <div id="history-list" class="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-6">
+                    <!-- Dynamic Items -->
+                 </div>
+             </div>
+             
+             <!-- Navigation Bar -->
+             <div class="absolute bottom-0 w-full bg-white h-[88px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] rounded-t-[2.5rem] flex justify-around items-start pt-4 px-6 z-30">
+                <button onclick="navigateTo('home')" class="nav-btn flex flex-col items-center gap-1 group w-16" data-target="home">
+                    <div class="icon-container w-12 h-12 rounded-2xl flex items-center justify-center text-gray-400 hover:bg-gray-50 transition-all duration-300">
+                        <i class="fa-solid fa-map text-xl"></i>
+                    </div>
+                </button>
+                <button onclick="navigateTo('history')" class="nav-btn active flex flex-col items-center gap-1 group w-16" data-target="history">
+                    <div class="icon-container w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 bg-primary/10 text-primary">
+                        <i class="fa-solid fa-clock-rotate-left text-xl"></i>
+                    </div>
+                </button>
+                <button onclick="navigateTo('my-booking')" class="nav-btn flex flex-col items-center gap-1 group w-16" data-target="my-booking">
+                    <div class="icon-container w-12 h-12 rounded-2xl flex items-center justify-center text-gray-400 hover:bg-gray-50 transition-all duration-300">
+                        <i class="fa-solid fa-ticket text-xl"></i>
+                    </div>
+                </button>
+            </div>
+        </div>
+
+        <!-- =========================
+             SCREEN: MY BOOKING
+        ========================== -->
+        <div id="screen-my-booking" class="screen bg-surface">
+             <div class="pt-10 px-6 h-full flex flex-col pb-nav">
+                 <div class="flex items-center gap-4 mb-8">
+                    <!-- Added Back Button -->
+                    <button onclick="navigateTo('home')" class="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-gray-700 hover:bg-gray-50 active:scale-95 transition">
+                        <i class="fa-solid fa-arrow-left"></i>
+                    </button>
+                    <h1 class="text-3xl font-bold text-gray-900 font-sf">My Bookings</h1>
+                 </div>
+
+                 <!-- Empty State -->
+                 <div id="no-bookings" class="hidden flex-1 flex flex-col items-center justify-center text-gray-400 pb-20">
+                     <i class="fa-solid fa-calendar-xmark text-6xl mb-4 opacity-30"></i>
+                     <p>No active bookings</p>
+                     <button onclick="navigateTo('home')" class="mt-4 text-primary font-bold text-sm">Find a Station</button>
+                 </div>
+
+                 <!-- List injected by JS -->
+                 <div id="active-bookings-list" class="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-6">
+                    <!-- Dynamic Items -->
+                 </div>
+             </div>
+             
+             <!-- Navigation Bar -->
+             <div class="absolute bottom-0 w-full bg-white h-[88px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] rounded-t-[2.5rem] flex justify-around items-start pt-4 px-6 z-30">
+                <button onclick="navigateTo('home')" class="nav-btn flex flex-col items-center gap-1 group w-16" data-target="home">
+                    <div class="icon-container w-12 h-12 rounded-2xl flex items-center justify-center text-gray-400 hover:bg-gray-50 transition-all duration-300">
+                        <i class="fa-solid fa-map text-xl"></i>
+                    </div>
+                </button>
+                <button onclick="navigateTo('history')" class="nav-btn flex flex-col items-center gap-1 group w-16" data-target="history">
+                    <div class="icon-container w-12 h-12 rounded-2xl flex items-center justify-center text-gray-400 hover:bg-gray-50 transition-all duration-300">
+                        <i class="fa-solid fa-clock-rotate-left text-xl"></i>
+                    </div>
+                </button>
+                <button onclick="navigateTo('my-booking')" class="nav-btn active flex flex-col items-center gap-1 group w-16" data-target="my-booking">
+                    <div class="icon-container w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 bg-primary/10 text-primary">
+                        <i class="fa-solid fa-ticket text-xl"></i>
+                    </div>
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- JavaScript Logic (Type=Module for Firebase) -->
+    <script type="module">
+        // 1. Import the SDKs
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getDatabase, ref, onValue, set, update, push, get } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+        const firebaseConfig = {
+          apiKey: "AIzaSyB0B0JsVPVXhy85YokUJ9lGpePO61dhuIc",
+          authDomain: "smartparking-5b4d2.firebaseapp.com",
+          databaseURL: "https://smartparking-5b4d2-default-rtdb.asia-southeast1.firebasedatabase.app",
+          projectId: "smartparking-5b4d2",
+          storageBucket: "smartparking-5b4d2.firebasestorage.app",
+          messagingSenderId: "971404645726",
+          appId: "1:971404645726:web:25b944cbbe60900b096bcf",
+          measurementId: "G-D25G6TNR5S"
+        };
+        
+        // 3. Initialize Firebase & Auth
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getDatabase(app);
+        const parkingRef = ref(db, 'slots');
+        const bookingsRef = ref(db, 'user_bookings');
+
+        // Helper to generate or retrieve a persistent fallback ID
+        function getFallbackUserId() {
+            let id = localStorage.getItem('temp_user_id');
+            if (!id) {
+                id = 'user_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('temp_user_id', id);
+            }
+            return id;
+        }
+
+        // Initialize user ID immediately with fallback
+        let currentUserId = getFallbackUserId(); 
+        let latestBookingsData = null; // Store raw data to re-process when Auth completes
+        let latestParkingData = null; // Store raw sensor data
+
+        // 4. Authenticate Anonymously
+        signInAnonymously(auth)
+            .then((userCredential) => {
+                // If auth succeeds, switch to real ID
+                currentUserId = userCredential.user.uid;
+                console.log("Firebase: Signed in anonymously as", currentUserId);
+                // RE-RUN FILTERING once we have the User ID
+                filterAndRenderBookings();
+            })
+            .catch((error) => {
+                console.warn("Auth Warning: Could not sign in anonymously. Using Fallback ID:", currentUserId, error);
+            });
+
+        // --- Data Simulator (Updated with Lat/Lng for Leaflet) ---
+        let stations = [
+            {
+                id: 1,
+                name: "Lyhour Fast Charge",
+                address: "St 150 Phnom Penh, Cambodia",
+                lat: 11.578486, 
+                lng: 104.895170, // Toul Kork
+                price: 0.33,
+                image: "https://evme-website-cms.s3.ap-southeast-1.amazonaws.com/multiple_electric_vehicle_ev_charging_stations_ebb6e2087d.jpg",
+                distance: "Calculating...", // Will be updated by auto-location
+                types: ["GBT", "CCS2"],
+                available: 6, 
+                total: 4,     
+                color: "primary", // Blue
+                slots: [
+                    { id: 'A1', status: 'available' },
+                    { id: 'A2', status: 'available' },
+                    { id: 'A3', status: 'busy', time: '12:45 PM' },
+                    { id: 'A4', status: 'available' }
+                ]
+            },
+            {
+                id: 2,
+                name: "ចែនិច EV Station",
+                address: "Sen Sok City, Phnom Penh",
+                lat: 11.6030, 
+                lng: 104.8770, // Sen Sok
+                price: 0.35,
+                distance: "Calculating...",
+                types: ["CCS2", "Type 2"],
+                available: 3,
+                total: 5,
+                color: "success", // Green
+                slots: [
+                    { id: 'B1', status: 'busy'},
+                    { id: 'B2', status: 'available'},
+                    { id: 'B3', status: 'busy'},
+                    { id: 'B4', status: 'available' },
+                    { id: 'B5', status: 'available' }
+                ]
+            },
+            {
+                id: 3,
+                name: "Chip Mong Noro Mall",
+                address: "Norodom Blvd, Phnom Penh",
+                lat: 11.5450, 
+                lng: 104.9250, // Norodom
+                price: 0.35,
+                distance: "Calculating...",
+                types: ["GBT"],
+                available: 0,
+                total: 2,
+                color: "danger", // Red
+                slots: [
+                    { id: 'C1', status: 'busy' },
+                    { id: 'C2', status: 'busy' }
+                ]
+            },
+
+            {
+                id: 4,
+                name: "Pich KL OCIC",
+                address: "OCIC, Phnom Penh",
+                lat: 11.594162,
+                lng: 104.925901,
+                price: 0.35,
+                distance: "Calculating...",
+                types: ["GBT"],
+                image: "https://www.usfa.fema.gov/img/photos/electric-car-charging-1200w.jpg",
+                available: 4,
+                total: 4,
+                color: "primary", // availibel
+                slots: [
+                    { id: 'D1', status: 'available' },
+                    { id: 'D2', status: 'available' },
+                    { id: 'D3', status: 'available' },
+                    { id: 'D4', status: 'available' }
+                ]
+            }
+
+        ];
+        
+        
+        // Start with dummy history
+        let historyData = [
+            { id: 101, name: "Aeon Mall Sen Sok", date: "14 Jan 2026", kwh: 15, price: 4.95, status: "Completed" },
+            { id: 102, name: "Lyhour Fast Charge", date: "10 Jan 2026", kwh: 22, price: 7.20, status: "Completed" }
+        ];
+
+        // GLOBAL BOOKINGS STORAGE
+        let allBookingsMap = {}; // { "slotId": [bookingObj, bookingObj] }
+        let activeBookings = []; // Filtered for current user
+        
+        let currentStation = null;
+        let selectedSlotId = null;
+        let bookingToDeleteIndex = null; // Track which booking to delete
+        
+        // Track ESP32 data timestamps for timeout detection
+        let slotDataTimestamps = {}; // {slot1: timestamp, slot2: timestamp, ...}
+        const ESP32_TIMEOUT = 10000; // 10 seconds - if no data arrives, slot becomes available
+
+        let recentlyBookedSlots = {}; // Track recently booked slots with timestamps
+        const RECENTLY_BOOKED_MS = 30000; // 30 seconds protection after booking to avoid sensor race
+        let inFlightBookingWrites = {}; // { slotNum: true } - prevent listener from overwriting during write
+
+        // Leaflet Global Variables
+        let map = null;
+        let markersLayer = null;
+        let userMarker = null;
+        let currentUserLocation = null;
+
+        // --- Firebase Listeners ---
+
+        // 1. LISTEN TO ALL BOOKINGS (For Smart Visibility)
+        onValue(bookingsRef, (snapshot) => {
+            latestBookingsData = snapshot.val(); // Store raw data
+            filterAndRenderBookings(); // Process it immediately
+        });
+
+        // 2. CENTRALIZED FUNCTION TO PROCESS BOOKINGS
+        function filterAndRenderBookings() {
+            allBookingsMap = {};
+            activeBookings = [];
+
+            if (latestBookingsData) {
+                // Parse all bookings
+                Object.entries(latestBookingsData).forEach(([key, booking]) => {
+                    // Store with ID
+                    const fullBooking = { ...booking, id: key };
+                    
+                    // Organize by Slot ID
+                    if (!allBookingsMap[booking.slot]) {
+                        allBookingsMap[booking.slot] = [];
+                    }
+                    allBookingsMap[booking.slot].push(fullBooking);
+
+                    // If it belongs to current user, add to My Bookings
+                    // Only add if we have a currentUserId, OR if we just added it (not applicable here directly, but listener handles it)
+                    if (currentUserId && booking.userId === currentUserId) {
+                        activeBookings.push(fullBooking);
+                    }
+                });
+            }
+            
+            // Update My Bookings List
+            renderActiveBookings();
+
+            // Refresh slots if we are viewing them (to update colors)
+            updateSlotsStatus(); 
+        }
+
+        // 3. LISTEN TO SENSORS (Parking Slots)
+        onValue(parkingRef, (snapshot) => {
+            latestParkingData = snapshot.val();
+            // --- NEW: Track Timestamps like index-4 ---
+            if (latestParkingData) {
+                // If data arrives, update timestamps to prevent timeouts
+                Object.keys(latestParkingData).forEach(key => {
+                   // Clean key to get slot index (e.g. 'slot1' -> 1)
+                   const slotIndex = key.toLowerCase().replace('slot', '');
+                   if(!isNaN(slotIndex)) {
+                       slotDataTimestamps[slotIndex] = Date.now();
+                   }
+                });
+            }
+            updateSlotsStatus(); // Trigger immediate update
+        }, (error) => {
+             console.error("Firebase Read Error:", error);
+            // This alert will tell you if it's a permission issue
+            if(error.code === 'PERMISSION_DENIED') {
+                 // Create a visible error banner for the user
+                 const banner = document.createElement('div');
+                 banner.className = "fixed top-0 left-0 w-full bg-red-600 text-white p-4 z-[100] text-center text-sm font-bold shadow-lg";
+                 banner.innerHTML = "Access Denied: Please enable 'Anonymous Auth' in Firebase Console OR set Realtime Database Rules to 'read': true.";
+                 document.body.appendChild(banner);
+                 
+                 // Remove banner after 10s if user ignores
+                 setTimeout(() => banner.remove(), 10000);
+            }
+        });
+
+        // 4. PERIODIC REFRESH (Every 1 Second)
+        // This ensures the 1-hour "Smart Visibility" rule updates in real-time
+        setInterval(() => {
+            updateSlotsStatus();
+        }, 1000);
+
+        // --- Distance Calculation (Haversine Formula) ---
+        function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+            var R = 6371; // Radius of the earth in km
+            var dLat = deg2rad(lat2-lat1);
+            var dLon = deg2rad(lon2-lon1); 
+            var a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
+            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+            var d = R * c; // Distance in km
+            return d;
+        }
+
+        function deg2rad(deg) {
+            return deg * (Math.PI/180);
+        }
+
+        function updateStationDistances() {
+            if (!currentUserLocation) return;
+            
+            stations.forEach(station => {
+                const d = getDistanceFromLatLonInKm(currentUserLocation[0], currentUserLocation[1], station.lat, station.lng);
+                
+                // Format distance
+                if (d < 1) {
+                    station.distance = (d * 1000).toFixed(0) + " m";
+                } else {
+                    station.distance = d.toFixed(1) + " km";
+                }
+            });
+            
+            // Note: We don't force a re-render of map markers here to avoid flickering,
+            // but the next time "updateSlotsStatus" runs or a station is clicked, 
+            // the new distance will be used.
+            // If the Station Preview is open, we can update it live:
+            if(currentStation) {
+                // Find updated data for current station
+                const updatedData = stations.find(s => s.id === currentStation.id);
+                // Update DOM if preview is open
+                const previewDistEl = document.querySelector('#preview-content .fa-location-dot');
+                if(previewDistEl && updatedData) {
+                    previewDistEl.nextElementSibling.innerText = updatedData.address + " • " + updatedData.distance;
+                }
+            }
+        }
+
+        // --- Centralized Slot Status Logic ---
+        function updateSlotsStatus() {
+            // Only proceed if we have sensor data (or default to assume available if you prefer, but waiting is safer)
+            if (!latestParkingData) return;
+            
+            const data = latestParkingData;
+            
+            // We will map this to Station 1 (Lyhour Fast Charge)
+            const targetStation = stations[0]; // Station ID 1
+            
+            // Track which slots changed
+            let anySlotChanged = false;
+            
+            // Reset availability count
+            let availableCount = 0;
+
+            // Map generic Firebase keys to our specific Slot IDs
+            targetStation.slots.forEach((slot, index) => {
+                const slotNum = index + 1;
+                const key = `slot${slotNum}`; 
+                let val = data[key];
+                
+                // Fallback: if data is an array
+                if(Array.isArray(data) && data[index] !== undefined) val = data[index];
+                
+                // Fallback 2: Check for uppercase keys (Slot1 vs slot1)
+                if (val === undefined && data[`Slot${slotNum}`] !== undefined) val = data[`Slot${slotNum}`];
+                
+                // Fallback 3: Handle undefined safely (Default to 0/Available if missing)
+                if (val === undefined || val === null) val = 0;
+
+                // Check in-flight
+                if (inFlightBookingWrites[slotNum]) {
+                        return; // Don't update status during write
+                }
+
+                // --- SMART VISIBILITY LOGIC START ---
+                
+                // 1. Get Physical Status from Sensor
+                // FIXED: Check for value 2 (Sensor Busy) or string "2"
+                // Value 1 is reserved for bookings, so it is NOT physically occupied by an anonymous car.
+                let sensorIsBusy = (val == 2 || val === "2");
+                
+                // 2. Get Booking Status
+                let bookingStatus = 'available';
+                let bookingTimeText = '';
+                
+                // Find upcoming bookings for this slot
+                const slotBookings = allBookingsMap[slot.id] || [];
+                
+                // REMOVED TIME CHECK - Booking is valid until sensor detects car
+                let relevantBooking = slotBookings.length > 0 ? slotBookings[0] : null;
+
+                if (relevantBooking) {
+                    // RULE 1: Own Device - Always sees "My Booking"
+                    if (currentUserId && relevantBooking.userId === currentUserId) {
+                        bookingStatus = 'my_booking';
+                        bookingTimeText = relevantBooking.time;
+                    } 
+                    // RULE 2: Other Device
+                    else {
+                        // For others, it just shows as Booked/Busy
+                        bookingStatus = 'booked';
+                        bookingTimeText = relevantBooking.time;
+                    }
+                }
+
+                // 3. COMBINE LOGIC & SENSOR INTERACTION
+                let finalStatus = 'available';
+                let finalTime = '';
+
+                if (sensorIsBusy) {
+                    // Physically occupied (Sensor = 2)
+                    
+                    // --- HANDOFF LOGIC ---
+                    // If the sensor detects a car (2) and there was a booking, 
+                    // we assume the user has arrived. Clear the booking so the sensor takes control.
+                    if (slotBookings && slotBookings.length > 0) {
+                        console.log(`[LOGIC] Sensor detected car at ${slot.id}. Clearing booking.`);
+                        slotBookings.forEach(b => {
+                            set(ref(db, 'user_bookings/' + b.id), null);
+                        });
+                    }
+
+                    if (bookingStatus === 'my_booking') {
+                        finalStatus = 'my_booking'; // Still show it's mine if deletion hasn't propagated
+                        finalTime = "Occupied (Yours)";
+                    } else {
+                        finalStatus = 'busy'; // Generic busy
+                        finalTime = "Occupied";
+                    }
+                } else {
+                    // Physically Empty (Sensor = 0 or 1-Booked)
+
+                    // --- PERSISTENCE LOGIC (MATCHING INDEX-4) ---
+                    // If we have an active booking, but the DB value is 0 (Available),
+                    // FORCE it back to 1 (Booked) to ensure hardware LEDs/status match the App.
+                    if (relevantBooking && val == 0) {
+                         // Only write if not already 1 to avoid loop
+                         console.log(`[LOGIC] Enforcing reservation for ${slot.id} (0 -> 1)`);
+                         update(ref(db, 'slots'), { [`slot${slotNum}`]: 1 });
+                    }
+
+                    if (bookingStatus === 'my_booking') {
+                        finalStatus = 'my_booking';
+                        finalTime = `Booked ${bookingTimeText}`;
+                    } else if (bookingStatus === 'booked') {
+                        finalStatus = 'busy'; // Appear busy to others
+                        finalTime = `Booked ${bookingTimeText}`;
+                    } else {
+                        finalStatus = 'available';
+                    }
+                }
+
+                // --- SMART VISIBILITY LOGIC END ---
+
+                if (slot.status !== finalStatus || slot.time !== finalTime) {
+                    slot.status = finalStatus;
+                    slot.time = finalTime; // Store specific time text
+                    anySlotChanged = true;
+                }
+
+                if (slot.status === 'available') availableCount++;
+            });
+
+            targetStation.available = availableCount;
+
+            // Update UI based on where the user is
+            const stationPreview = document.getElementById('station-preview');
+            const isPreviewOpen = !stationPreview.classList.contains('translate-y-[150%]');
+            
+            // 1. Re-render Map Markers (to show updated colors/counts)
+            if(anySlotChanged) {
+               renderMapMarkers(stations);
+            }
+
+            // 2. If Details Screen is open for this station, re-render it
+            // We check anySlotChanged to avoid flickering the DOM unnecessarily
+            if (anySlotChanged && currentStation && currentStation.id === targetStation.id) {
+                if (document.getElementById('screen-details').classList.contains('active')) {
+                    const savedSelection = selectedSlotId;
+                    openDetails(); // Re-render details
+                    if(savedSelection) {
+                        // Restore selection logic...
+                            const newSlotState = targetStation.slots.find(s => s.id === savedSelection);
+                        if(newSlotState && newSlotState.status === 'available') {
+                            // keep selection if still available
+                        }
+                    }
+                }
+                // 3. If Preview is open for this station, re-render preview
+                else if (isPreviewOpen) {
+                        openStationPreview(targetStation);
+                }
+            }
+        }
+
+        // --- Dev Tool: Clear Bookings ---
+        window.debugClearBookings = async () => {
+             if(confirm("DEV TOOL: Are you sure you want to clear ALL booking history from the database? This cannot be undone.")) {
+                 try {
+                     await set(bookingsRef, null);
+                     alert("Database cleared!");
+                 } catch(e) {
+                     alert("Error clearing DB: " + e.message);
+                 }
+             }
+        }
+
+        // --- Dev Tool: Reset A1 ---
+        window.debugResetSlotA1 = async () => {
+            if(confirm("DEV TOOL: Force Reset Slot A1? This will clear sensor data and delete all bookings for A1.")) {
+                try {
+                    console.log("Starting Aggressive Reset for Slot A1...");
+                    
+                    // 1. Reset Sensor (Cover all possible keys)
+                    const updatesSensors = {
+                        slot1: 0,
+                        Slot1: 0,
+                        '0': 0 
+                    };
+                    await update(ref(db, 'slots'), updatesSensors);
+                    console.log("Sensors reset.");
+
+                    // 2. Find and delete bookings for A1 (Aggressive matching)
+                    const snapshot = await get(bookingsRef);
+                    if (snapshot.exists()) {
+                        const data = snapshot.val();
+                        const updates = {};
+                        let count = 0;
+                        
+                        Object.entries(data).forEach(([key, booking]) => {
+                            // Normalize string: lowercase, remove spaces
+                            const s = String(booking.slot || "").toLowerCase().replace(/\s/g, '');
+                            
+                            // Check for 'a1', 'slot1', '1', or just 'a' if someone typed badly
+                            if (s === 'a1' || s === 'slot1' || s === '1') {
+                                updates[key] = null; // Delete
+                                count++;
+                            }
+                        });
+                        
+                        if (count > 0) {
+                            await update(bookingsRef, updates);
+                            console.log(`Deleted ${count} bookings.`);
+                        }
+                    }
+                    
+                    // 3. Force UI Refresh
+                    updateSlotsStatus();
+                    
+                    alert("Slot A1 has been fully reset (Sensors + Bookings cleared).");
+                } catch(e) {
+                    console.error(e);
+                    alert("Error resetting A1: " + e.message);
+                }
+            }
+        }
+
+        // --- Init ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initLeafletMap();
+            renderHistory();
+            renderActiveBookings(); // This will be empty until Auth loads
+            
+            // Set default date/time in modal
+            const now = new Date();
+            document.getElementById('book-date').valueAsDate = now;
+            document.getElementById('book-time').value = now.toTimeString().substring(0,5);
+        });
+
+        // --- Navigation ---
+        function navigateTo(screenId) {
+            // Screen Transitions
+            document.querySelectorAll('.screen').forEach(el => {
+                el.classList.remove('active', 'slide-enter', 'slide-enter-active');
+            });
+            
+            const target = document.getElementById('screen-' + screenId);
+            target.classList.add('active');
+            
+            // Trigger animation frame
+            requestAnimationFrame(() => {
+                target.classList.add('slide-enter-active');
+            });
+
+             // If returning to home, make sure map handles resize properly
+            if(screenId === 'home' && map) {
+                setTimeout(() => map.invalidateSize(), 300);
+            }
+            
+            // Update Bottom Nav UI across all screens
+            updateBottomNav(screenId);
+        }
+
+        function updateBottomNav(screenId) {
+            // Because we have multiple nav bars (duplicated in html), update all of them
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                const iconContainer = btn.querySelector('.icon-container');
+                const icon = btn.querySelector('i');
+                
+                if(btn.dataset.target === screenId) {
+                    iconContainer.classList.remove('text-gray-400', 'hover:bg-gray-50');
+                    iconContainer.classList.add('bg-primary/10', 'text-primary');
+                } else {
+                    iconContainer.classList.add('text-gray-400', 'hover:bg-gray-50');
+                    iconContainer.classList.remove('bg-primary/10', 'text-primary');
+                }
+            });
+        }
+
+        // --- NAVIGATION LAUNCHER (NEW) ---
+        window.launchNavigation = (lat, lng) => {
+            // Use current location if available for better routing
+            let url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+            if (currentUserLocation) {
+                url += `&origin=${currentUserLocation[0]},${currentUserLocation[1]}`;
+            }
+            window.open(url, '_blank');
+        }
+
+        // --- Leaflet Map Logic ---
+        function initLeafletMap() {
+            // Initialize map centered roughly on Phnom Penh stations
+            map = L.map('map-container', {
+                zoomControl: false, 
+                attributionControl: true
+            }).setView([11.570, 104.900], 13);
+
+            // Add OpenStreetMap Tile Layer
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            // Create a Layer Group for markers
+            markersLayer = L.layerGroup().addTo(map);
+
+            // Add User Location Marker (Pulsing Dot)
+            const userIcon = L.divIcon({
+                className: 'custom-marker-wrapper',
+                html: `
+                    <div class="w-10 h-10 flex items-center justify-center relative">
+                        <div class="absolute inset-0 bg-blue-400 rounded-full animate-ping opacity-75"></div>
+                        <div class="w-10 h-10 flex items-center justify-center rounded-full bg-blue-100/50 relative z-10">
+                            <i class="fa-solid fa-car text-blue-600 text-lg drop-shadow-sm"></i>
+                        </div>
+                    </div>
+                `,
+                iconSize: [40, 40],
+                iconAnchor: [20, 20]
+            });
+
+            // Place user somewhere in between
+            userMarker = L.marker([11.565, 104.905], { icon: userIcon }).addTo(map);
+
+            // --- ADDED: Auto Location ---
+            if ("geolocation" in navigator) {
+                navigator.geolocation.watchPosition((position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const newLoc = [lat, lng];
+                    
+                    if (userMarker) userMarker.setLatLng(newLoc);
+                    
+                    // Update global var
+                    currentUserLocation = newLoc;
+
+                    // Fly to location on first fix
+                    if (!map._hasFlownToUser) {
+                        map.flyTo(newLoc, 15);
+                        map._hasFlownToUser = true;
+                    }
+
+                    // --- NEW: Calculate Distances ---
+                    updateStationDistances();
+
+                }, (err) => {
+                    console.warn("Geolocation access denied or failed", err);
+                }, {
+                    enableHighAccuracy: true,
+                    maximumAge: 10000,
+                    timeout: 5000
+                });
+            }
+
+            // Initial render of stations
+            renderMapMarkers(stations);
+        }
+
+        function renderMapMarkers(data) {
+            if (!map || !markersLayer) return;
+
+            // Clear existing markers
+            markersLayer.clearLayers();
+
+            data.forEach(station => {
+                // Dynamic Color based on availability
+                let colorClass = 'bg-primary';
+                let glowClass = 'bg-primary/30';
+                
+                if (station.available === 0) {
+                     colorClass = 'bg-danger';
+                     glowClass = 'bg-danger/30';
+                } else if (station.available < 3) {
+                     colorClass = 'bg-primary'; 
+                } else {
+                     colorClass = 'bg-success';
+                     glowClass = 'bg-success/30';
+                }
+
+                if(station.color === 'danger') { colorClass = 'bg-danger'; glowClass = 'bg-danger/30'; }
+
+                // Create custom HTML icon matching your original design
+                const customIcon = L.divIcon({
+                    className: 'custom-marker-wrapper',
+                    html: `
+                        <div class="w-16 h-16 rounded-full flex items-center justify-center marker-pulse relative ${glowClass}">
+                            <div class="w-10 h-10 ${colorClass} text-white rounded-full flex items-center justify-center shadow-lg border-2 border-white transform transition duration-300 hover:scale-110 relative z-10">
+                                <i class="fa-solid fa-bolt"></i>
+                            </div>
+                            <div class="absolute -top-2 -right-2 bg-white text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md border border-gray-100">${station.available}</div>
+                        </div>
+                    `,
+                    iconSize: [64, 64], // Match w-16 h-16 (4rem = 64px)
+                    iconAnchor: [32, 32] // Center point
+                });
+
+                // Add marker to layer
+                const marker = L.marker([station.lat, station.lng], { icon: customIcon });
+                
+                // Add click event
+                marker.on('click', () => {
+                    openStationPreview(station);
+                    map.flyTo([station.lat, station.lng], 15, { duration: 1 });
+                });
+
+                marker.addTo(markersLayer);
+            });
+        }
+
+        function filterStations(query) {
+            const filtered = stations.filter(s => s.name.toLowerCase().includes(query.toLowerCase()));
+            renderMapMarkers(filtered);
+        }
+
+        function resetMap() {
+             document.getElementById('search-input').value = '';
+             renderMapMarkers(stations);
+             
+             // Recenter map using Leaflet flyTo
+             if(map) {
+                 // Use current location if available, else default
+                 const target = currentUserLocation || [11.570, 104.900];
+                 const zoom = currentUserLocation ? 15 : 13;
+                 map.flyTo(target, zoom, { duration: 1.5 });
+             }
+             
+             // Simple visual feedback on button
+             const btn = document.querySelector('.fa-location-crosshairs').parentElement;
+             btn.classList.add('bg-blue-50');
+             setTimeout(() => btn.classList.remove('bg-blue-50'), 200);
+        }
+
+        // --- Station Preview ---
+        function openStationPreview(station) {
+            currentStation = station;
+            const preview = document.getElementById('station-preview');
+            const content = document.getElementById('preview-content');
+            
+            // Populate Content
+            content.innerHTML = `
+                 <div class="flex flex-col gap-4">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h2 class="text-xl font-bold text-gray-900">${station.name}</h2>
+                            <div class="flex items-center text-gray-500 text-xs mt-1">
+                                <i class="fa-solid fa-location-dot mr-1"></i>
+                                <span>${station.address} • ${station.distance}</span>
+                            </div>
+                        </div>
+                        <button onclick="window.closeStationPreview()" class="text-gray-400 w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full"><i class="fa-solid fa-times"></i></button>
+                    </div>
+                    
+                    <div class="flex items-center gap-3">
+                         <div class="flex-1 bg-gray-50 rounded-2xl p-3 border border-gray-100 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-primary shadow-sm">
+                                    <i class="fa-solid fa-charging-station text-lg"></i>
+                                </div>
+                                <div>
+                                    <div class="text-gray-400 text-[10px] uppercase font-bold tracking-wider">Available</div>
+                                    <div class="text-gray-900 font-bold text-sm">${station.available}/${station.total} Slots</div>
+                                </div>
+                            </div>
+                            <div class="${station.available > 0 ? 'text-success' : 'text-danger'} text-xl font-bold">${station.available > 0 ? 'Open' : 'Full'}</div>
+                        </div>
+                    </div>
+
+                    <button onclick="window.openDetails()" class="w-full bg-primary text-white py-3.5 rounded-xl font-bold shadow-lg shadow-blue-500/20 hover:bg-secondary transition active:scale-[0.98]">
+                        View Station
+                    </button>
+                </div>
+            `;
+
+            preview.classList.remove('translate-y-[150%]');
+        }
+
+        function closeStationPreview() {
+            document.getElementById('station-preview').classList.add('translate-y-[150%]');
+        }
+
+        // --- Details Screen (Updated with Smart Visibility) ---
+        function openDetails() {
+            if(!currentStation) return;
+            
+            const container = document.getElementById('details-content');
+            
+            // Generate Slots HTML
+            let slotsHtml = '';
+            currentStation.slots.forEach(slot => {
+                // Determine display based on calculated status from listener
+                
+                const isMyBooking = slot.status === 'my_booking';
+                const isAvailable = slot.status === 'available';
+                const isBusy = slot.status === 'busy';
+
+                let statusColor = isAvailable ? 'text-success' : 'text-danger';
+                let bgClass = isAvailable ? 'bg-success/5 border-success/30 hover:border-success' : 'bg-gray-100 border-gray-200 opacity-60 pointer-events-none';
+                let iconBg = isAvailable ? 'bg-success' : 'bg-danger';
+                
+                // Special styling for My Booking
+                if (isMyBooking) {
+                    statusColor = 'text-primary';
+                    bgClass = 'bg-primary/10 border-primary/50 pointer-events-none'; // Can't select own booked slot
+                    iconBg = 'bg-primary';
+                }
+
+                // Status Text Logic
+                let statusText = '';
+                if (isMyBooking) {
+                    statusText = 'My Booking • ' + (slot.time || 'Active');
+                } else if (isAvailable) {
+                    statusText = 'Available';
+                } else {
+                    // It's busy (either sensor or booked soon)
+                    statusText = slot.time || 'Occupied';
+                }
+                
+                slotsHtml += `
+                    <div onclick="window.selectSlot(this, '${slot.id}')" class="slot-item relative border ${bgClass} rounded-2xl p-3 cursor-pointer transition-all duration-200 group">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 ${iconBg} rounded-xl flex items-center justify-center text-white shadow-sm">
+                                <i class="fa-solid fa-plug text-sm"></i>
+                            </div>
+                            <div>
+                                <div class="font-bold text-gray-800 text-sm">Slot ${slot.id}</div>
+                                <div class="${statusColor} text-xs font-medium mt-0.5">${statusText}</div>
+                            </div>
+                        </div>
+                        <div class="selection-ring hidden absolute inset-0 border-2 border-primary rounded-2xl pointer-events-none"></div>
+                        <div class="check-icon hidden absolute top-[-6px] right-[-6px] bg-primary text-white w-5 h-5 rounded-full items-center justify-center text-xs shadow-md">
+                            <i class="fa-solid fa-check"></i>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = `
+                <!-- Header Image -->
+                <div class="relative w-full h-72 bg-gray-800">
+                    <img src="${currentStation.image}" alt="Station" class="w-full h-full object-cover opacity-90">
+                    <div class="absolute inset-0 bg-gradient-to-t from-surface via-transparent to-black/30"></div>
+                    
+                    <button onclick="window.navigateTo('home')" class="absolute top-12 left-6 w-10 h-10 bg-white/20 backdrop-blur-md border border-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition text-white">
+                        <i class="fa-solid fa-arrow-left"></i>
+                    </button>
+
+                     <!-- Independent Navigation Button in Header -->
+                    <button onclick="window.launchNavigation(${currentStation.lat}, ${currentStation.lng})" class="absolute top-12 right-6 w-10 h-10 bg-primary/90 backdrop-blur-md border border-white/20 rounded-full flex items-center justify-center hover:bg-primary transition text-white shadow-lg">
+                        <i class="fa-solid fa-location-arrow"></i>
+                    </button>
+
+                    <div class="absolute bottom-0 left-0 w-full p-6">
+                        <span class="bg-primary text-white px-3 py-1 rounded-full text-xs font-bold mb-2 inline-block">Fast Charge</span>
+                        <h1 class="text-3xl font-bold text-gray-900 font-sf">${currentStation.name}</h1>
+                        <div class="flex items-center text-gray-500 text-sm mt-1">
+                            <i class="fa-solid fa-location-dot mr-2 text-primary"></i>
+                            <span>${currentStation.distance} • ${currentStation.address}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info Cards -->
+                <div class="px-6 py-2 grid grid-cols-2 gap-3">
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                        <div class="text-gray-400 text-xs font-bold uppercase mb-1">Price</div>
+                        <div class="text-xl font-bold text-gray-900">$${currentStation.price} <span class="text-sm font-normal text-gray-400">/kWh</span></div>
+                    </div>
+                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                        <div class="text-gray-400 text-xs font-bold uppercase mb-1">Distance</div>
+                        <div class="text-xl font-bold text-gray-900">${currentStation.distance}</div>
+                    </div>
+                </div>
+
+                <!-- Slots Grid -->
+                <div class="px-6 py-6">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Select a Port</h3>
+                    <div class="grid grid-cols-2 gap-3 mb-24">
+                        ${slotsHtml}
+                    </div>
+                </div>
+
+                <!-- Floating Bottom Bar -->
+                <div class="fixed bottom-0 left-0 w-full p-6 bg-white border-t border-gray-100 z-40 rounded-t-[2rem] shadow-[0_-5px_20px_rgba(0,0,0,0.05)] sm:absolute">
+                    <button onclick="window.openBookingModal()" id="btn-book-slot" disabled class="w-full bg-gray-200 text-gray-400 py-4 rounded-2xl font-bold text-lg transition-all duration-300 transform">
+                        Select a Slot
+                    </button>
+                </div>
+            `;
+            
+            navigateTo('details');
+        }
+
+        // --- Slot Logic ---
+        function selectSlot(el, slotId) {
+            // Visual reset
+            document.querySelectorAll('.slot-item').forEach(item => {
+               item.classList.remove('bg-blue-50', 'border-primary');
+               item.querySelector('.selection-ring').classList.add('hidden');
+               item.querySelector('.check-icon').classList.add('hidden');
+               
+               // Revert available ones (careful not to revert My Booking or Busy)
+               if(!item.classList.contains('pointer-events-none')) {
+                   item.classList.add('bg-success/5', 'border-success/30');
+               }
+            });
+
+            // Active State
+            el.classList.remove('bg-success/5', 'border-success/30');
+            el.classList.add('bg-blue-50', 'border-primary');
+            el.querySelector('.selection-ring').classList.remove('hidden');
+            el.querySelector('.check-icon').classList.remove('hidden');
+
+            selectedSlotId = slotId;
+
+            // Enable Button
+            const btn = document.getElementById('btn-book-slot');
+            btn.disabled = false;
+            btn.innerHTML = `Book Slot ${slotId} <i class="fa-solid fa-arrow-right ml-2"></i>`;
+            btn.className = "w-full bg-primary text-white py-4 rounded-2xl font-bold text-lg shadow-glow hover:bg-secondary active:scale-[0.98] transition-all duration-300";
+        }
+
+        // --- Booking Modal ---
+        function openBookingModal() {
+            if(!selectedSlotId) return;
+            const modal = document.getElementById('modal-booking');
+            const card = document.getElementById('booking-card');
+            
+            document.getElementById('booking-station-name').innerText = currentStation.name;
+            
+            modal.classList.remove('hidden');
+            // Trigger transition
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                card.classList.remove('translate-y-10');
+            }, 10);
+        }
+
+        function closeBookingModal() {
+            const modal = document.getElementById('modal-booking');
+            const card = document.getElementById('booking-card');
+            
+            modal.classList.add('opacity-0');
+            card.classList.add('translate-y-10');
+            
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
+        }
+
+        async function confirmBooking() {
+            // Create booking object
+            const date = document.getElementById('book-date').value;
+            const time = document.getElementById('book-time').value;
+            
+            if(!date || !time) {
+                alert("Please select date and time");
+                return;
+            }
+
+            const bookingData = {
+                stationName: currentStation.name,
+                address: currentStation.address,
+                slot: selectedSlotId,
+                date: date,
+                time: time,
+                price: currentStation.price,
+                timestamp: Date.now(),
+                userId: currentUserId // Link booking to user
+            };
+
+            try {
+                // 1. Save booking to Firebase
+                const newRef = push(bookingsRef);
+                await set(newRef, bookingData);
+
+                // 2. Update slot status to busy (1)
+                const slotNum = selectedSlotId.replace(/[A-Z]/g, '');
+                
+                // Track start of write operation to prevent listener overwrite
+                inFlightBookingWrites[slotNum] = true;
+
+                // Track locally that we just booked this to show it as busy immediately
+                recentlyBookedSlots[selectedSlotId] = Date.now();
+
+                // Optimistically update UI for better responsiveness
+                const slotToUpdate = currentStation.slots.find(s => s.id === selectedSlotId);
+                if(slotToUpdate) {
+                    slotToUpdate.status = 'my_booking';
+                    slotToUpdate.time = time;
+                }
+
+                await update(ref(db, 'slots'), {
+                    [`slot${slotNum}`]: 1
+                });
+
+                // Clear flight flag after short delay
+                setTimeout(() => {
+                    delete inFlightBookingWrites[slotNum];
+                }, 2000);
+
+                // No need to manually push to activeBookings array, the listener will catch it.
+                // But we should refresh to be safe.
+                
+                closeBookingModal();
+                navigateTo('success');
+                
+                // Reset selection
+                selectedSlotId = null;
+            } catch (err) {
+                alert("Booking failed: " + err.message);
+                console.error("Database error:", err);
+                // Clear flag on error
+                if(selectedSlotId) {
+                    const slotNum = selectedSlotId.replace(/[A-Z]/g, '');
+                    delete inFlightBookingWrites[slotNum];
+                }
+            }
+        }
+
+        // --- Cancel Modal Logic ---
+        function promptCancel(index) {
+            bookingToDeleteIndex = index;
+            const modal = document.getElementById('modal-confirm');
+            const card = document.getElementById('confirm-card');
+            
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                card.classList.remove('scale-95');
+                card.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeConfirmModal() {
+            const modal = document.getElementById('modal-confirm');
+            const card = document.getElementById('confirm-card');
+            
+            modal.classList.add('opacity-0');
+            card.classList.remove('scale-100');
+            card.classList.add('scale-95');
+            
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                bookingToDeleteIndex = null;
+            }, 300);
+        }
+
+        async function performCancel() {
+            if (bookingToDeleteIndex !== null) {
+                try {
+                    const booking = activeBookings[bookingToDeleteIndex];
+                    
+                    // 1. Mark slot as available (0) in Firebase
+                    const slotNum = booking.slot.replace(/[A-Z]/g, '');
+                    
+                    // Prevent flicker
+                    inFlightBookingWrites[slotNum] = true;
+                    
+                    await update(ref(db, 'slots'), {
+                        [`slot${slotNum}`]: 0
+                    });
+                    
+                    setTimeout(() => {
+                         delete inFlightBookingWrites[slotNum];
+                    }, 2000);
+                    
+                    // Remove from local tracking
+                    delete recentlyBookedSlots[booking.slot];
+                    
+                    // Remove booking from DB - IMPORTANT: Need to remove from 'user_bookings' now
+                    if(booking.id) {
+                         await set(ref(db, 'user_bookings/' + booking.id), null);
+                    }
+
+                    // 3. Remove from local array (Listener will likely do this, but optimistic update helps)
+                    activeBookings.splice(bookingToDeleteIndex, 1);
+                    renderActiveBookings();
+                } catch (err) {
+                    alert("Cancellation failed: " + err.message);
+                    console.error("Cancel error:", err);
+                }
+            }
+            closeConfirmModal();
+        }
+
+        // --- History & My Bookings Renderer ---
+        function renderHistory() {
+            const container = document.getElementById('history-list');
+            container.innerHTML = historyData.map(item => `
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+                     <div class="flex items-center gap-4">
+                         <div class="w-12 h-12 bg-gray-50 rounded-xl flex items-center justify-center text-gray-400">
+                             <i class="fa-solid fa-charging-station"></i>
+                         </div>
+                         <div>
+                             <h4 class="font-bold text-gray-900">${item.name}</h4>
+                             <p class="text-xs text-gray-400 font-medium">${item.date} • ${item.kwh} kWh</p>
+                         </div>
+                     </div>
+                     <div class="text-right">
+                         <div class="font-bold text-gray-900">$${item.price.toFixed(2)}</div>
+                         <div class="text-[10px] font-bold uppercase text-success bg-green-50 px-2 py-1 rounded-md inline-block mt-1">${item.status}</div>
+                     </div>
+                 </div>
+            `).join('');
+        }
+
+        function renderActiveBookings() {
+            const container = document.getElementById('active-bookings-list');
+            const emptyState = document.getElementById('no-bookings');
+
+            if(activeBookings.length === 0) {
+                container.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                container.classList.add('hidden');
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+            container.classList.remove('hidden');
+
+            container.innerHTML = activeBookings.map((item, index) => `
+                <div class="bg-white rounded-[1.5rem] p-6 shadow-soft mb-4 relative overflow-hidden group">
+                     <div class="absolute top-0 left-0 w-1.5 h-full bg-primary"></div>
+                     
+                     <div class="flex justify-between items-start mb-5">
+                        <div>
+                             <h3 class="text-lg font-bold text-gray-900">${item.stationName}</h3>
+                             <p class="text-gray-400 text-xs mt-1"><i class="fa-solid fa-location-dot mr-1"></i>${item.address}</p>
+                        </div>
+                        <div class="bg-blue-50 text-primary px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide animate-pulse">Active</div>
+                     </div>
+
+                     <div class="flex justify-between items-center bg-gray-50 p-4 rounded-xl mb-5 border border-gray-100">
+                         <div class="text-center">
+                             <div class="text-gray-400 text-[10px] font-bold uppercase mb-1">Date</div>
+                             <div class="font-bold text-gray-800 text-sm">${formatDate(item.date)}</div>
+                         </div>
+                         <div class="h-8 w-px bg-gray-200"></div>
+                         <div class="text-center">
+                             <div class="text-gray-400 text-[10px] font-bold uppercase mb-1">Time</div>
+                             <div class="font-bold text-gray-800 text-sm">${item.time}</div>
+                         </div>
+                         <div class="h-8 w-px bg-gray-200"></div>
+                         <div class="text-center">
+                             <div class="text-gray-400 text-[10px] font-bold uppercase mb-1">Slot</div>
+                             <div class="font-bold text-primary text-sm">${item.slot}</div>
+                         </div>
+                     </div>
+
+                     <div class="flex gap-3">
+                         <button onclick="window.promptCancel(${index})" class="flex-1 py-3 rounded-xl font-bold text-sm text-gray-500 hover:bg-gray-50 border border-gray-200 transition">Cancel</button>
+                         <button class="flex-1 bg-primary text-white py-3 rounded-xl font-bold text-sm shadow-md hover:bg-secondary transition flex items-center justify-center gap-2">
+                            Navigate <i class="fa-solid fa-location-arrow text-xs"></i>
+                         </button>
+                     </div>
+                 </div>
+            `).join('');
+        }
+
+        // Helper for date formatting
+        function formatDate(dateString) {
+            const options = { month: 'short', day: 'numeric' };
+            return new Date(dateString).toLocaleDateString('en-US', options);
+        }
+
+        // Attach global functions to window
+        window.navigateTo = navigateTo;
+        window.filterStations = filterStations;
+        window.resetMap = resetMap;
+        window.openStationPreview = openStationPreview;
+        window.closeStationPreview = closeStationPreview;
+        window.openDetails = openDetails;
+        window.selectSlot = selectSlot;
+        window.openBookingModal = openBookingModal;
+        window.closeBookingModal = closeBookingModal;
+        window.confirmBooking = confirmBooking;
+        window.promptCancel = promptCancel;
+        window.closeConfirmModal = closeConfirmModal;
+        window.performCancel = performCancel;
+
+    </script>
+</body>
+</html>
